@@ -1,0 +1,17 @@
+# Xcode
+DerivedData/
+build/
+*.xcresult
+
+# Xcode per-user state — never shared. The project's own
+# `ShapeMorph.xcodeproj/project.xcworkspace/contents.xcworkspacedata` stays
+# tracked; only per-user data inside any workspace/project is ignored.
+*.xcuserstate
+**/xcuserdata/
+
+# Swift Package Manager local state
+.swiftpm/
+.build/
+
+# macOS
+.DS_Store

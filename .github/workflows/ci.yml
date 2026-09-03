@@ -1,0 +1,157 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ShapeMorph — Continuous Integration
+#
+# Triggers : push to main, any pull_request targeting main.
+# Runner   : macos-26  →  ships with Xcode 26.x + iOS 26 SDK.
+#            (iOS 26.0 minimum deployment target requires Xcode 26.)
+# Scheme   : ShapeMorph  (shared, includes ShapeMorphTests)
+# Deps     : none — pure Apple frameworks, no package resolution needed.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build & Test — iOS Simulator
+    runs-on: macos-26
+
+    env:
+      PROJECT:       ShapeMorph.xcodeproj
+      SCHEME:        ShapeMorph
+      CONFIGURATION: Debug
+
+    steps:
+      # ── 1. Source ───────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Xcode ────────────────────────────────────────────────────────────
+      - name: Select Xcode
+        run: |
+          VERSION=$(tr -d '[:space:]' < .xcode-version)
+          XCODE_PATH="/Applications/Xcode_${VERSION}.app"
+          if [[ ! -d "$XCODE_PATH" ]]; then
+            echo "Error: Xcode ${VERSION} not found at ${XCODE_PATH}" >&2
+            echo "Installed Xcodes:" >&2
+            ls -d /Applications/Xcode*.app >&2
+            exit 1
+          fi
+          sudo xcode-select -s "$XCODE_PATH"
+          echo "Active Xcode: $(xcodebuild -version | tr '\n' ' ')  →  $XCODE_PATH"
+
+      # ── 3. Diagnostics ─────────────────────────────────────────────────────
+      - name: List available simulators
+        run: |
+          xcrun simctl list devices available 2>/dev/null \
+            | grep -E "^--|iPhone|iPad" \
+            || echo "simctl returned no output"
+
+      # ── 4. Build ────────────────────────────────────────────────────────────
+      # Uses generic/platform to compile without booting a simulator.
+      # Catches Swift 6 strict-concurrency errors and linker issues fast.
+      - name: Build
+        run: |
+          xcodebuild build \
+            -project "$PROJECT" \
+            -scheme  "$SCHEME"  \
+            -configuration "$CONFIGURATION" \
+            -destination "generic/platform=iOS Simulator" \
+            CODE_SIGNING_ALLOWED=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            -quiet
+
+      # ── 5. Test ─────────────────────────────────────────────────────────────
+      - name: Test
+        run: |
+          # Resolve the UDID of the newest available iPhone simulator on the
+          # runner, so the destination never drifts out of sync with the image.
+          SIM_ID=$(xcrun simctl list devices available --json | jq -r '
+            [ .devices
+              | to_entries[]
+              | select(.key | test("SimRuntime\\.iOS"))
+              | .key as $runtime
+              | .value[]
+              | select(.name | startswith("iPhone"))
+              | { runtime: $runtime, name: .name, udid: .udid }
+            ]
+            | sort_by(.runtime, .name)
+            | last
+            | .udid
+          ')
+          if [[ -z "$SIM_ID" || "$SIM_ID" == "null" ]]; then
+            echo "Error: no iPhone simulator found on the runner" >&2
+            xcrun simctl list devices available >&2
+            exit 1
+          fi
+          echo "Using simulator UDID: $SIM_ID"
+          xcodebuild test \
+            -project "$PROJECT" \
+            -scheme  "$SCHEME" \
+            -configuration "$CONFIGURATION" \
+            -destination "id=$SIM_ID" \
+            CODE_SIGNING_ALLOWED=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            -resultBundlePath TestResults.xcresult
+
+      # ── 6. Verify tests actually ran ───────────────────────────────────────
+      # Swift Testing suites are NOT reflected in xcodebuild's legacy console
+      # summary, so a scheme that silently stopped running its tests would still
+      # show ** TEST SUCCEEDED **. Parse the .xcresult and gate on a real count.
+      - name: Verify tests executed
+        if: always()
+        run: |
+          if [[ ! -d TestResults.xcresult ]]; then
+            echo "::error::TestResults.xcresult no encontrado — el paso Test no generó un result bundle"
+            exit 1
+          fi
+
+          SUMMARY=$(xcrun xcresulttool get test-results summary --path TestResults.xcresult --compact)
+          jq . <<< "$SUMMARY"
+
+          RESULT=$( jq -r '.result          // "unknown"' <<< "$SUMMARY")
+          TOTAL=$(  jq -r '.totalTestCount   // 0'         <<< "$SUMMARY")
+          PASSED=$( jq -r '.passedTests      // 0'         <<< "$SUMMARY")
+          FAILED=$( jq -r '.failedTests      // 0'         <<< "$SUMMARY")
+          SKIPPED=$(jq -r '.skippedTests     // 0'         <<< "$SUMMARY")
+          XFAIL=$(  jq -r '.expectedFailures // 0'         <<< "$SUMMARY")
+          EXECUTED=$(( PASSED + FAILED + XFAIL ))
+
+          echo "──────────────────────────────────────────────"
+          echo "  Resultado global : $RESULT"
+          echo "  Tests ejecutados : $EXECUTED  (de $TOTAL en el plan)"
+          echo "  · pasaron        : $PASSED"
+          echo "  · fallaron       : $FAILED"
+          echo "  · fallos esperad.: $XFAIL"
+          echo "  · saltados       : $SKIPPED"
+          echo "──────────────────────────────────────────────"
+
+          if [[ "$EXECUTED" -eq 0 ]]; then
+            echo "::error::No se ejecutó ningún test (0 tests ejecutados). Revisa el scheme/target ShapeMorphTests."
+            exit 1
+          fi
+          if [[ "$FAILED" -ne 0 || "$RESULT" == "Failed" ]]; then
+            echo "::error::$FAILED test(s) fallaron:"
+            jq -r '.testFailures[]? | "  ✘ \(.targetName)/\(.testName): \(.failureText)"' <<< "$SUMMARY"
+            exit 1
+          fi
+
+          echo "✅ $EXECUTED tests ejecutados, $FAILED fallos"
+
+      # ── 7. Artifacts ────────────────────────────────────────────────────────
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestResults-${{ github.run_number }}
+          path: TestResults.xcresult
+          retention-days: 14

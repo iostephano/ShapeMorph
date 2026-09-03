@@ -1,66 +1,139 @@
-# 2D-Shape-Morphing-with-Core-Graphics-and-Linear-Algebra
-## Description
+# ShapeMorph — Morphing entre figuras 2D con Core Graphics
 
-This UIKit Mini Project demonstrates how to animate smooth transitions between different 2D shapes using Core Graphics and basic linear algebra. It is designed as a lightweight visual tool to explore how custom vector math and real-time rendering can be combined to create fluid morphing animations entirely from scratch.
-
-The app showcases how to interpolate between multiple geometric figures — such as squares, rectangles, diamonds, and circles — while maintaining visual coherence and smooth motion.
-
-It’s ideal for those interested in learning how drawing, animation, and math can be harmonized in a UIKit-based creative tool.
-
----
-
-## Project Structure
-
-- **MorphingView.swift**: Custom `UIView` that draws and animates morphing shapes using `UIBezierPath`.
-- **ShapeFactory.swift**: Generates base shapes and interpolates them to ensure matching point counts for seamless transitions.
-- **ViewController.swift**: Manages the UI and shape selection buttons, and starts the animation.
-- **SceneDelegate.swift**: Sets up the window and root view controller.
-- **AppDelegate.swift**: Standard app lifecycle entry point.
+ShapeMorph es una app de iOS que anima transiciones suaves entre seis figuras
+(cuadrado, rectángulo, rombo, círculo, corazón y estrella). Cada figura se
+representa con el mismo número de puntos repartidos por igual a lo largo de su
+perímetro; al elegir otra figura, la app empareja los puntos de la actual con los
+de la nueva de la mejor forma posible y luego interpola entre ambos conjuntos frame
+a frame. Existe como proyecto de portafolio para mostrar cómo se combinan muestreo
+por longitud de arco, emparejamiento de puntos y render en tiempo real para conseguir
+un morphing limpio, con esa geometría separada del UIKit y cubierta por pruebas.
 
 ---
 
-## How It Works
+## Tecnologías usadas
 
-The app performs real-time interpolation between shapes by animating between two sets of `CGPoint` arrays:
-
-| Component | Description |
-| --- | --- |
-| **Shape Types** | Square, Rectangle, Diamond, Circle |
-| **Animation Engine** | CADisplayLink updates the animation frame-by-frame |
-| **Rendering** | Shapes are drawn using `UIBezierPath` inside `draw(_:)` |
-| **Interpolation** | Each shape is represented with 40 evenly distributed points, ensuring clean transitions |
-
-Shapes are defined as sequences of points on their perimeter. When the user selects a different shape, the app interpolates from the current shape to the target one using linear interpolation of each point pair.
-
-The transition is visually smooth thanks to:
-
-- Frame-based updates via `CADisplayLink`
-- Equidistant point sampling for every shape
-- Single `UIBezierPath` rendering logic for all shapes
+- Swift 6 (con verificación estricta de concurrencia activada)
+- UIKit, construido por código (sin Storyboards)
+- Core Graphics / `UIBezierPath` para el render
+- `CADisplayLink` para la animación por frames
+- Swift Testing para las pruebas
+- Integración continua con GitHub Actions (compila y corre los tests en cada push/PR)
+- Cero dependencias externas
 
 ---
 
-## Preview
+## Cómo está organizado el proyecto
 
-- Tap a shape button to morph the current shape.
-- Shapes include square, rectangle, diamond, and circle.
-- The morphing animation is smooth and continuous.
-- Real-time rendering using Core Graphics.
+```
+ShapeMorph/
+├── AppDelegate.swift / SceneDelegate.swift   # Arranque; SceneDelegate crea el ViewController
+├── Controllers/
+│   └── ViewController.swift                  # La vista de morphing + una fila de botones
+├── Views/
+│   └── MorphingView.swift                    # Estado de la animación y dibujo con UIBezierPath
+└── Shapes/
+    ├── Shape.swift                           # Las seis figuras y su título
+    ├── ShapeLibrary.swift                    # Genera cada figura y la remuestrea por longitud de arco
+    └── Morph.swift                           # Emparejamiento de puntos e interpolación
+```
+
+`ShapeLibrary` y `Morph` no importan UIKit: son geometría pura sobre `CGPoint`.
+`MorphingView` solo lleva el progreso de la animación y dibuja el resultado.
 
 ---
 
-## Ideas for Extension
+## Cómo funciona / flujo principal
 
-Here are some ideas to expand the functionality:
-
-- Add more complex shapes (e.g. star, heart).
-- Allow user-drawn shapes with interpolation to presets.
-- Add a timeline slider to control morph progress manually.
-- Export morphing as image sequences or video.
-- Animate shape color or stroke styles during transitions.
+1. `ShapeLibrary` genera cada figura como una lista de vértices (densa para las
+   curvas) y la **remuestrea a 64 puntos equiespaciados por longitud de arco**, de
+   modo que todas las figuras tienen la misma cantidad y densidad de puntos.
+2. Al tocar un botón, `MorphingView.setTarget(_:)` congela la figura que se ve en ese
+   instante y pide los puntos de la figura destino.
+3. `Morph.aligned(_:to:)` reordena los puntos de la figura de partida: prueba los 64
+   desplazamientos cíclicos y los dos sentidos de giro, y se queda con el que
+   minimiza la suma de distancias al cuadrado frente al destino. Así el punto de una
+   esquina no se empareja con un punto del lado opuesto y la figura **no gira**
+   durante la transición.
+4. Un `CADisplayLink` avanza el progreso según el tiempo transcurrido; cada frame
+   `Morph.interpolate(from:to:progress:)` calcula la figura intermedia (con un
+   suavizado *ease-in-out*) y `MorphingView` la dibuja con un `UIBezierPath` relleno.
+5. Al llegar a 1, la figura de partida pasa a ser la de destino y el `CADisplayLink`
+   se detiene.
 
 ---
 
-## License
+## Funcionalidades / qué demuestra
 
-MIT License. Feel free to use and modify.
+- Remuestreo de cualquier contorno a un número fijo de puntos equiespaciados por
+  longitud de arco.
+- Emparejamiento de puntos entre dos figuras por búsqueda del desplazamiento cíclico
+  y el sentido de giro óptimos (la parte de "álgebra lineal" del morphing).
+- Interpolación lineal punto a punto con suavizado, dirigida por tiempo.
+- `CADisplayLink` con el ciclo de vida atado a la ventana, para no dejar el timer
+  corriendo ni retener la vista.
+- Geometría aislada de UIKit y cubierta por pruebas.
+
+---
+
+## Pruebas
+
+`ShapeMorphTests` (Swift Testing):
+
+- **`ShapeLibrary`**: cada figura se representa con exactamente 64 puntos; su caja
+  contenedora queda centrada en el lienzo y dentro de él; los puntos están
+  equiespaciados por longitud de arco (cada hueco entre 0.5x y 2x de la media) —
+  antes el corazón y la estrella no pasaban por el remuestreo y sus huecos variaban
+  varias veces. Además: `resample` conserva la cantidad pedida, arranca en el primer
+  vértice y produce huecos idénticos en un cuadrado.
+- **`Morph.aligned`**: alinear listas idénticas no cambia nada; la alineación nunca
+  empeora el coste de emparejamiento y para cuadrado→círculo lo mejora de verdad;
+  recupera un desplazamiento cíclico y un giro invertido del destino; con longitudes
+  distintas cae al destino.
+- **`Morph.interpolate`**: progreso 0 / 1 / 0.5 dan inicio / fin / punto medio; el
+  progreso se recorta a 0...1.
+- **`Morph.easeInOut`**: fija extremos y punto medio, monótona, recorta fuera de rango.
+
+Correr los tests:
+
+```bash
+xcodebuild test \
+  -project ShapeMorph.xcodeproj \
+  -scheme ShapeMorph \
+  -destination 'platform=iOS Simulator,name=iPhone 16'
+```
+
+---
+
+## Cómo correr el proyecto
+
+1. Clona el repo:
+   ```bash
+   git clone https://github.com/iostephano/ShapeMorph.git
+   ```
+2. Abre `ShapeMorph.xcodeproj` con **Xcode 26** (ver `.xcode-version`).
+3. El objetivo mínimo es **iOS 26**. Elige un simulador de iPhone o un dispositivo y
+   ejecuta (Cmd-R).
+4. Toca cualquiera de los seis botones para morfar la figura actual hacia esa.
+
+---
+
+## Cosas pendientes o limitadas (a propósito)
+
+- **El emparejamiento de puntos es global, no elástico.** Se elige un único
+  desplazamiento y sentido para toda la figura; no se reparametriza cada tramo. Para
+  estas seis figuras convexas (y el corazón) basta; con formas muy cóncavas o con
+  agujeros haría falta algo más.
+- **La figura se dibuja como polígono de 64 lados**, sin curvas Bézier reales. A este
+  tamaño no se nota, pero un círculo es en realidad un polígono de 64 lados.
+- **El lienzo es de 300x300 puntos fijos** y centrado; las figuras no se adaptan al
+  tamaño de pantalla más allá de eso.
+- **Sin control del progreso**: la animación dura 0.6 s y no hay slider ni forma de
+  pausarla a medio camino.
+- **Solo color de relleno**: no se anima el color ni el trazo durante la transición.
+
+---
+
+## Autor
+
+Stephano Portella
