@@ -17,7 +17,13 @@ enum ShapeLibrary {
     static let resolution = 64
 
     static func points(for shape: Shape, in rect: CGRect) -> [CGPoint] {
-        centered(resample(outline(for: shape, in: rect), to: resolution), in: rect)
+        // `resampleKeepingVertices` fija los vértices del contorno. En las
+        // figuras poligonales con lados desiguales (rectángulo) o vértices
+        // agudos (estrella) evita que el remuestreo por arco corte las esquinas;
+        // en el cuadrado y el rombo da el mismo resultado que `resample`, y en
+        // las curvas densas (círculo, corazón) cae a `resample`.
+        let sampled = resampleKeepingVertices(outline(for: shape, in: rect), to: resolution)
+        return centered(sampled, in: rect)
     }
 
     /// Reposiciona los puntos para que su caja contenedora quede centrada en
@@ -132,5 +138,43 @@ enum ShapeLibrary {
             ))
         }
         return result
+    }
+
+    /// Como `resample`, pero garantiza que cada vértice de `polygon` aparezca en
+    /// la salida: reparte los `count` puntos entre las aristas según su longitud
+    /// (redondeando la cuenta acumulada) y coloca el primero de cada arista
+    /// exactamente sobre su vértice. Así las esquinas agudas —las puntas de la
+    /// estrella— se conservan afiladas, manteniendo el reparto equidistante.
+    static func resampleKeepingVertices(_ polygon: [CGPoint], to count: Int) -> [CGPoint] {
+        let n = polygon.count
+        guard n >= 3, count >= n else { return resample(polygon, to: count) }
+
+        var cumulative: [CGFloat] = [0]
+        for i in 0..<n {
+            let next = polygon[(i + 1) % n]
+            cumulative.append(cumulative[i] + hypot(next.x - polygon[i].x, next.y - polygon[i].y))
+        }
+        let perimeter = cumulative[n]
+        guard perimeter > 0 else { return Array(repeating: polygon[0], count: count) }
+
+        var result: [CGPoint] = []
+        result.reserveCapacity(count)
+        var placed = 0
+        for i in 0..<n {
+            let upToNextVertex = Int((CGFloat(count) * cumulative[i + 1] / perimeter).rounded())
+            let pointsOnEdge = max(0, min(count, upToNextVertex) - placed)
+            let start = polygon[i]
+            let end = polygon[(i + 1) % n]
+            for j in 0..<pointsOnEdge {
+                let t = CGFloat(j) / CGFloat(pointsOnEdge)
+                result.append(CGPoint(
+                    x: start.x + (end.x - start.x) * t,
+                    y: start.y + (end.y - start.y) * t
+                ))
+            }
+            placed += pointsOnEdge
+        }
+        while result.count < count { result.append(polygon[0]) }
+        return Array(result.prefix(count))
     }
 }

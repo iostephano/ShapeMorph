@@ -76,4 +76,59 @@ struct ShapeLibraryTests {
     func resampleDegenerate() {
         #expect(ShapeLibrary.resample([CGPoint(x: 1, y: 1)], to: 10).count == 1)
     }
+
+    @Test("Vertex-preserving resampling keeps every original vertex")
+    func resampleKeepsVertices() {
+        let pentagon = (0..<5).map { i -> CGPoint in
+            let angle = CGFloat(i) / 5 * 2 * .pi
+            return CGPoint(x: 50 + cos(angle) * 20, y: 50 + sin(angle) * 20)
+        }
+        let resampled = ShapeLibrary.resampleKeepingVertices(pentagon, to: 30)
+        #expect(resampled.count == 30)
+        for vertex in pentagon {
+            #expect(resampled.contains { hypot($0.x - vertex.x, $0.y - vertex.y) < 0.0001 })
+        }
+    }
+
+    @Test("The star keeps its 5 sharp outer tips and 5 inner notches after resampling")
+    func starTipsArePreserved() {
+        let points = ShapeLibrary.points(for: .star, in: rect)
+        let cx = points.map(\.x).reduce(0, +) / CGFloat(points.count)
+        let cy = points.map(\.y).reduce(0, +) / CGFloat(points.count)
+        let radii = points.map { hypot($0.x - cx, $0.y - cy) }
+        let outer = radii.max()!
+        let inner = radii.min()!
+
+        // Si el remuestreo se saltara los picos, ningún punto llegaría a los
+        // extremos; con vértices preservados hay exactamente 5 arriba y 5 abajo.
+        #expect(radii.filter { $0 > outer - 2 }.count == 5)
+        #expect(radii.filter { $0 < inner + 2 }.count == 5)
+        // Y las puntas son de verdad agudas: el pico casi dobla al valle.
+        #expect(outer > inner * 2)
+    }
+
+    @Test("The resampled rectangle stays a true right-angled rectangle")
+    func rectangleHasRightAngles() {
+        let points = ShapeLibrary.points(for: .rectangle, in: rect)
+        let minX = points.map(\.x).min()!, maxX = points.map(\.x).max()!
+        let minY = points.map(\.y).min()!, maxY = points.map(\.y).max()!
+        let onEdge: CGFloat = 0.001
+
+        // Todo punto cae sobre uno de los 4 lados de la caja. Si una esquina
+        // quedara cortada en diagonal, sus puntos caerían dentro de la caja.
+        for point in points {
+            let onVertical = abs(point.x - minX) < onEdge || abs(point.x - maxX) < onEdge
+            let onHorizontal = abs(point.y - minY) < onEdge || abs(point.y - maxY) < onEdge
+            #expect(onVertical || onHorizontal)
+        }
+
+        // Las 4 esquinas exactas están presentes (ángulos rectos reales).
+        let corners = [
+            CGPoint(x: minX, y: minY), CGPoint(x: maxX, y: minY),
+            CGPoint(x: maxX, y: maxY), CGPoint(x: minX, y: maxY)
+        ]
+        for corner in corners {
+            #expect(points.contains { hypot($0.x - corner.x, $0.y - corner.y) < onEdge })
+        }
+    }
 }

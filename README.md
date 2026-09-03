@@ -47,7 +47,9 @@ ShapeMorph/
 
 1. `ShapeLibrary` genera cada figura como una lista de vértices (densa para las
    curvas) y la **remuestrea a 64 puntos equiespaciados por longitud de arco**, de
-   modo que todas las figuras tienen la misma cantidad y densidad de puntos.
+   modo que todas las figuras tienen la misma cantidad y densidad de puntos. La
+   estrella usa un remuestreo que además fija sus 10 vértices, para que las puntas no
+   salgan romas.
 2. Al tocar un botón, `MorphingView.setTarget(_:)` congela la figura que se ve en ese
    instante y pide los puntos de la figura destino.
 3. `Morph.aligned(_:to:)` reordena los puntos de la figura de partida: prueba los 64
@@ -81,11 +83,12 @@ ShapeMorph/
 `ShapeMorphTests` (Swift Testing):
 
 - **`ShapeLibrary`**: cada figura se representa con exactamente 64 puntos; su caja
-  contenedora queda centrada en el lienzo y dentro de él; los puntos están
-  equiespaciados por longitud de arco (cada hueco entre 0.5x y 2x de la media) —
-  antes el corazón y la estrella no pasaban por el remuestreo y sus huecos variaban
-  varias veces. Además: `resample` conserva la cantidad pedida, arranca en el primer
-  vértice y produce huecos idénticos en un cuadrado.
+  contenedora queda centrada en el lienzo y dentro de él; ningún hueco entre puntos
+  consecutivos pasa de 1.5x la media (antes el corazón y la estrella no pasaban por el
+  remuestreo y dejaban huecos varias veces mayores). Además: `resample` conserva la
+  cantidad pedida, arranca en el primer vértice y produce huecos idénticos en un
+  cuadrado; el remuestreo con vértices fijos conserva todos los vértices de entrada; y
+  la estrella mantiene sus 5 picos exteriores y 5 interiores tras el remuestreo.
 - **`Morph.aligned`**: alinear listas idénticas no cambia nada; la alineación nunca
   empeora el coste de emparejamiento y para cuadrado→círculo lo mejora de verdad;
   recupera un desplazamiento cíclico y un giro invertido del destino; con longitudes
