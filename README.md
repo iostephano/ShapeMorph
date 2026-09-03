@@ -9,6 +9,8 @@ a frame. Existe como proyecto de portafolio para mostrar cómo se combinan muest
 por longitud de arco, emparejamiento de puntos y render en tiempo real para conseguir
 un morphing limpio, con esa geometría separada del UIKit y cubierta por pruebas.
 
+<img width="1343" height="819" alt="ShapeMorph" src="https://github.com/user-attachments/assets/91901fdd-709b-44bb-9504-f29cf1051313" />
+
 ---
 
 ## Tecnologías usadas
