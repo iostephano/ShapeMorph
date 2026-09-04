@@ -33,7 +33,7 @@ jobs:
     steps:
       # ── 1. Source ───────────────────────────────────────────────────────────
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # ── 2. Xcode ────────────────────────────────────────────────────────────
       - name: Select Xcode
@@ -150,7 +150,7 @@ jobs:
       # ── 7. Artifacts ────────────────────────────────────────────────────────
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: TestResults-${{ github.run_number }}
           path: TestResults.xcresult
